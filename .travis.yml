@@ -20,28 +20,47 @@ before_install:
   - sudo mkdir /var/www/ && sudo chmod -R 777 /var/www/
 
 install:
-  - pip install -r scripts/deployment/pip/requirements/2_rsr.txt
   - pip install -r scripts/deployment/pip/requirements/3_testing.txt
 
-before_script:
-  - psql -c 'CREATE DATABASE travis_test;' -U postgres
-  - python manage.py migrate --noinput
-  - python manage.py runserver &
-
+# *NOTE* Default stage is 'test' if no stage specified. It always runs first!
 script:
-  - python manage.py collectstatic --noinput
-  - coverage run manage.py test akvo
-  - SLOW_TESTS=1 coverage run -a manage.py test akvo.rsr.tests.rest.test_migration
-  - coverage report -m
   # We don't care about migrations; __init__.py can have unused imports
   # wsgi.py and scripts/ are handled below
   - flake8 --ignore=E501 --exclude=wsgi.py,scripts,migrations,__init__.py akvo/
-  # Need environ to be set before other imports, etc. So, ignore E402
   - flake8 --ignore=E501,E402 akvo/scripts/
   - flake8 --ignore=E501,E402 akvo/wsgi.py
 
-after_success:
-  - coveralls
+jobs:
+  include:
+    - stage: tests
+      python: "2.7"
+      script:
+        - psql -c 'CREATE DATABASE travis_test;' -U postgres
+        - pip install -r scripts/deployment/pip/requirements/2_rsr.txt
+        - coverage run manage.py test akvo
+    - stage: tests
+      python: "2.7"
+      env: SLOW_TESTS=1 DJANGO=1.7.7 DB=postgres
+      script:
+        - psql -c 'CREATE DATABASE travis_test;' -U postgres
+        - pip install -r scripts/deployment/pip/requirements/2_rsr.txt
+        - coverage run -a manage.py test akvo.rsr.tests.rest.test_migration
+
+    - stage: coverage
+      python: "2.7"
+      script: coverage report -m
+
+    - stage: run
+      python: "2.7"
+      script:
+        - psql -c 'CREATE DATABASE travis_test;' -U postgres
+        - pip install -r scripts/deployment/pip/requirements/2_rsr.txt
+        - python manage.py migrate --noinput
+        - python manage.py runserver &
+
+    - stage: success
+      python: "2.7"
+      script: coveralls
 
 notifications:
   email: false
